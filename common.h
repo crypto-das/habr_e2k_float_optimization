@@ -12,7 +12,7 @@
     printf("File: %s, Line: %d, pid: %d\n", __FILE__, __LINE__, run_config->mpi_config->proc_id);
 
 
-#define my_int int
+#define my_int ssize_t
 
 
 struct MpiConfig;
