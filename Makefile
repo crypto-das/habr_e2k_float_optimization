@@ -3,9 +3,9 @@ MPICC =
 CFLAGS = 
 LDFLAGS = 
 LIBS = -lm
-CFILES = solve_cpu.c functions_cpu.c
+CFILES = solve_cpu.c
 MPIFILES = main.c solve.c
-HFILES = common.h solve.h solve_cpu.h functions_cpu.h
+HFILES = common.h solve.h solve_cpu.h
 OBJECTS = $(CFILES:.c=.o) $(MPIFILES:.c=.o)
 TARGET = prog
 all: $(TARGET)
