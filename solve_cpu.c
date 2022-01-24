@@ -129,8 +129,11 @@ void init_data(const struct RunConfig *run_config)
     }
 }
 
-void calc_aw_b(const struct RunConfig *run_config, const double *src, double *dst, double alpha)
+void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, double * restrict dst, double alpha)
 {
+    double * restrict b_mat = run_config->b_mat;
+    double * restrict q_mat = run_config->q_mat;
+    
     my_int start_i = 1;
     my_int start_j = 1;
     my_int stop_i = run_config->domain_m;
@@ -144,7 +147,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double w1j  = src[2 * (run_config->domain_n + 2) + j];
             double w0jp = src[1 * (run_config->domain_n + 2) + j + 1];
             double w0jm = src[1 * (run_config->domain_n + 2) + j - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (w0j - w1j) + (run_config->q_mat[idx] + 2 * run_config->inv_h1) * w0j - (w0jp + w0jm - 2 * w0j) * run_config->sqinv_h2 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (w0j - w1j) + (q_mat[idx] + 2 * run_config->inv_h1) * w0j - (w0jp + w0jm - 2 * w0j) * run_config->sqinv_h2 - alpha * b_mat[idx];
         }
     }
     if (run_config->stop_i == run_config->m - 1) {
@@ -156,7 +159,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double wmmj = src[(run_config->domain_m - 1) * (run_config->domain_n + 2) + j];
             double wmjp = src[run_config->domain_m       * (run_config->domain_n + 2) + j + 1];
             double wmjm = src[run_config->domain_m       * (run_config->domain_n + 2) + j - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (wmj - wmmj) + (run_config->q_mat[idx] + 2 * run_config->inv_h1) * wmj - (wmjp + wmjm - 2 * wmj) * run_config->sqinv_h2 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (wmj - wmmj) + (q_mat[idx] + 2 * run_config->inv_h1) * wmj - (wmjp + wmjm - 2 * wmj) * run_config->sqinv_h2 - alpha * b_mat[idx];
         }
     }
     if (run_config->start_j == 0) {
@@ -168,7 +171,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double wi1  = src[i       * (run_config->domain_n + 2) + 2];
             double wip0 = src[(i + 1) * (run_config->domain_n + 2) + 1];
             double wim0 = src[(i - 1) * (run_config->domain_n + 2) + 1];
-            dst[idx] = 2 * run_config->sqinv_h2 * (wi0 - wi1) + (run_config->q_mat[idx] + 2 * run_config->inv_h2) * wi0 - (wip0 + wim0 - 2 * wi0) * run_config->sqinv_h1 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h2 * (wi0 - wi1) + (q_mat[idx] + 2 * run_config->inv_h2) * wi0 - (wip0 + wim0 - 2 * wi0) * run_config->sqinv_h1 - alpha * b_mat[idx];
         }
     }
     if (run_config->stop_j == run_config->n - 1) {
@@ -180,7 +183,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double winm = src[i       * (run_config->domain_n + 2) + run_config->domain_n - 1];
             double wipn = src[(i + 1) * (run_config->domain_n + 2) + run_config->domain_n];
             double wimn = src[(i - 1) * (run_config->domain_n + 2) + run_config->domain_n];
-            dst[idx] = 2 * run_config->sqinv_h2 * (win - winm) + (run_config->q_mat[idx] + 2 * run_config->inv_h2) * win - (wipn + wimn - 2 * win) * run_config->sqinv_h1 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h2 * (win - winm) + (q_mat[idx] + 2 * run_config->inv_h2) * win - (wipn + wimn - 2 * win) * run_config->sqinv_h1 - alpha * b_mat[idx];
         }
     }
     // (i, j)
@@ -193,7 +196,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
             double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
             double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
-            dst[idx] = run_config->q_mat[idx] * wij - laplacian - alpha * run_config->b_mat[idx];
+            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
         }
     }
     // Угловые точки заполняем строго в конце
@@ -204,7 +207,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double w00  = src[idx];
             double w10  = src[2 * (run_config->domain_n + 2) + 1];
             double w01  = src[1 * (run_config->domain_n + 2) + 2];
-            dst[idx] = 2 * run_config->sqinv_h1 * (w00 - w10) + 2 * run_config->sqinv_h2 * (w00 - w01) + (run_config->q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * w00 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (w00 - w10) + 2 * run_config->sqinv_h2 * (w00 - w01) + (q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * w00 - alpha * b_mat[idx];
         }
         // (1, N)
         if (run_config->stop_j == run_config->n - 1) {
@@ -212,7 +215,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double w0n  = src[idx];
             double w1n  = src[2 * (run_config->domain_n + 2) + run_config->domain_n];
             double w0nm = src[1 * (run_config->domain_n + 2) + run_config->domain_n - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (w0n - w1n) + 2 * run_config->sqinv_h2 * (w0n - w0nm) + (run_config->q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * w0n - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (w0n - w1n) + 2 * run_config->sqinv_h2 * (w0n - w0nm) + (q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * w0n - alpha * b_mat[idx];
         }
     }
     if (run_config->stop_i == run_config->m - 1) {
@@ -222,7 +225,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double wm0  = src[idx];
             double wmm0 = src[(run_config->domain_m - 1) * (run_config->domain_n + 2) + 1];
             double wm1  = src[run_config->domain_m       * (run_config->domain_n + 2) + 2];
-            dst[idx] = 2 * run_config->sqinv_h1 * (wm0 - wmm0) + 2 * run_config->sqinv_h2 * (wm0 - wm1) + (run_config->q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * wm0 - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (wm0 - wmm0) + 2 * run_config->sqinv_h2 * (wm0 - wm1) + (q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * wm0 - alpha * b_mat[idx];
         }
         // (M, N)
         if (run_config->stop_j == run_config->n - 1) {
@@ -230,13 +233,15 @@ void calc_aw_b(const struct RunConfig *run_config, const double *src, double *ds
             double wmn  = src[idx];
             double wmmn = src[(run_config->domain_m - 1) * (run_config->domain_n + 2) + run_config->domain_n];
             double wmnm = src[run_config->domain_m       * (run_config->domain_n + 2) + run_config->domain_n - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (wmn - wmmn) + 2 * run_config->sqinv_h2 * (wmn - wmnm) + (run_config->q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * wmn - alpha * run_config->b_mat[idx];
+            dst[idx] = 2 * run_config->sqinv_h1 * (wmn - wmmn) + 2 * run_config->sqinv_h2 * (wmn - wmnm) + (q_mat[idx] + 2 * (run_config->inv_h1 + run_config->inv_h2)) * wmn - alpha * b_mat[idx];
         }
     }
 }
 
-void calc_tau_part(const struct RunConfig *run_config, const double *a_residual, double *num_out, double *div_out)
+void calc_tau_part(const struct RunConfig *run_config, const double * restrict a_residual, double * restrict num_out, double *div_out)
 {
+    double * restrict residual = run_config->residual;
+    
     double num = 0;
     double div = 0;
     for (my_int i = 1; i <= run_config->domain_m; ++i) {
@@ -250,7 +255,7 @@ void calc_tau_part(const struct RunConfig *run_config, const double *a_residual,
             if (run_config->start_j == 0) {
                 rhoy = 0.5;
             }
-            num += rhox * rhoy * a_residual[idx] * run_config->residual[idx];
+            num += rhox * rhoy * a_residual[idx] * residual[idx];
             div += rhox * rhoy * a_residual[idx] * a_residual[idx];
         }
         {
@@ -259,12 +264,12 @@ void calc_tau_part(const struct RunConfig *run_config, const double *a_residual,
             if (run_config->stop_j == run_config->n - 1) {
                 rhoy = 0.5;
             }
-            num += rhox * rhoy * a_residual[idx] * run_config->residual[idx];
+            num += rhox * rhoy * a_residual[idx] * residual[idx];
             div += rhox * rhoy * a_residual[idx] * a_residual[idx];
         }
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
-            num += rhox * a_residual[idx] * run_config->residual[idx];
+            num += rhox * a_residual[idx] * residual[idx];
             div += rhox * a_residual[idx] * a_residual[idx];
         }
     }
@@ -274,6 +279,10 @@ void calc_tau_part(const struct RunConfig *run_config, const double *a_residual,
 
 double update_w_calc_partial_error(const struct RunConfig *run_config, double tau)
 {
+    double * restrict cur_w = run_config->cur_w;
+    double * restrict next_w = run_config->next_w;
+    double * restrict residual = run_config->residual;
+    
     double error_value = 0;
     for (my_int i = 1; i <= run_config->domain_m; ++i) {
         double rhox = 1;
@@ -286,8 +295,8 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
             if (run_config->start_j == 0) {
                 rhoy = 0.5;
             }
-            double diff = tau * run_config->residual[idx];
-            run_config->next_w[idx] = run_config->cur_w[idx] - diff;
+            double diff = tau * residual[idx];
+            next_w[idx] = cur_w[idx] - diff;
             error_value += rhox * rhoy * diff * diff;
         }
         {
@@ -296,14 +305,14 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
             if (run_config->stop_j == run_config->n - 1) {
                 rhoy = 0.5;
             }
-            double diff = tau * run_config->residual[idx];
-            run_config->next_w[idx] = run_config->cur_w[idx] - diff;
+            double diff = tau * residual[idx];
+            next_w[idx] = cur_w[idx] - diff;
             error_value += rhox * rhoy * diff * diff;
         }
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
-            double diff = tau * run_config->residual[idx];
-            run_config->next_w[idx] = run_config->cur_w[idx] - diff;
+            double diff = tau * residual[idx];
+            next_w[idx] = cur_w[idx] - diff;
             error_value += rhox * diff * diff;
         }
     }
