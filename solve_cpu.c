@@ -3,49 +3,53 @@
 #include <stdlib.h>
 #include <math.h>
 
+#if defined(__e2k__)
+#include <e2kintrin.h>
+#endif
+
 
 int alloc_data(struct RunConfig *run_config)
 {
     int error_code = EXIT_FAILURE;
     
     my_int domain_size = (run_config->domain_m + 2) * (run_config->domain_n + 2);
-    run_config->cur_w = calloc(domain_size, sizeof(*run_config->cur_w));
+    run_config->cur_w = aligned_alloc(16, domain_size * sizeof(*run_config->cur_w));
     if (!run_config->cur_w) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->residual = calloc(domain_size, sizeof(*run_config->residual));
+    run_config->residual = aligned_alloc(16, domain_size * sizeof(*run_config->residual));
     if (!run_config->residual) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->next_w = calloc(domain_size, sizeof(*run_config->next_w));
+    run_config->next_w = aligned_alloc(16, domain_size * sizeof(*run_config->next_w));
     if (!run_config->residual) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->b_mat = calloc(domain_size, sizeof(*run_config->b_mat));
+    run_config->b_mat = aligned_alloc(16, domain_size * sizeof(*run_config->b_mat));
     if (!run_config->b_mat) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->q_mat = calloc(domain_size, sizeof(*run_config->q_mat));
+    run_config->q_mat = aligned_alloc(16, domain_size * sizeof(*run_config->q_mat));
     if (!run_config->q_mat) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->buf0 = calloc(run_config->domain_m + 2, sizeof(*run_config->buf0));
+    run_config->buf0 = aligned_alloc(16, (run_config->domain_m + 2) * sizeof(*run_config->buf0));
     if (!run_config->buf0) {
         error_code = EXIT_FAILURE;
         goto done;
     }
     
-    run_config->buf1 = calloc(run_config->domain_m + 2, sizeof(*run_config->buf1));
+    run_config->buf1 = aligned_alloc(16, (run_config->domain_m + 2) * sizeof(*run_config->buf1));
     if (!run_config->buf1) {
         error_code = EXIT_FAILURE;
         goto done;
@@ -187,6 +191,83 @@ void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, 
         }
     }
     // (i, j)
+#if defined(__e2k__)
+    my_int head = start_j % 2;
+    start_j += head;
+    my_int tail = (stop_j - start_j + 1) % 2;
+    stop_j -= tail;
+    
+    type_union_128 sqinv_h1;
+    sqinv_h1.d.d0 = run_config->sqinv_h1;
+    sqinv_h1.d.d1 = run_config->sqinv_h1;
+    
+    type_union_128 sqinv_h2;
+    sqinv_h2.d.d0 = run_config->sqinv_h2;
+    sqinv_h2.d.d1 = run_config->sqinv_h2;
+    
+    type_union_128 const_2;
+    const_2.d.d0 = 2.0;
+    const_2.d.d1 = 2.0;
+    
+    type_union_128 v2alpha;
+    v2alpha.d.d0 = alpha;
+    v2alpha.d.d1 = alpha;
+    
+    for (my_int i = start_i; i <= stop_i; ++i) {
+        if (head) {
+            my_int j = 1;
+            my_int idx = i * (run_config->domain_n + 2) + j;
+            double wij  = src[idx];
+            double wipj = src[(i + 1) * (run_config->domain_n + 2) + j];
+            double wimj = src[(i - 1) * (run_config->domain_n + 2) + j];
+            double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
+            double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
+            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
+            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
+        }
+        
+        const __v2di mix_doubles = { 0x0f0e0d0c0b0a0908, 0x1716151413121110 };
+        __v2di src_0 = *((__v2di *) &src[i * (run_config->domain_n + 2) + start_j - 2]);
+        __v2di src_1 = *((__v2di *) &src[i * (run_config->domain_n + 2) + start_j]);
+        __v2di wijm = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+        
+        for (my_int j = start_j; j < stop_j; j += 2) {
+            my_int idx = i * (run_config->domain_n + 2) + j;
+            __v2di wij = *((__v2di *) &src[idx]);
+            __v2di wipj = *((__v2di *) &src[(i + 1) * (run_config->domain_n + 2) + j]);
+            __v2di wimj = *((__v2di *) &src[(i - 1) * (run_config->domain_n + 2) + j]);
+            
+            src_0 = wij;
+            src_1 = *((__v2di *) &src[idx + 2]);
+            __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+            
+            __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
+            __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
+            __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
+            __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
+            __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
+            __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
+            __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
+            __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
+            __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
+            __v2di t8 = __builtin_e2k_qpfmuld(v2alpha.__v2di, *((__v2di *) &b_mat[idx]));
+            *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(__builtin_e2k_qpfsubd(t7, laplacian), t8);
+            wijm = wijp;
+        }
+        
+        if (tail) {
+            my_int j = stop_j + 1;
+            my_int idx = i * (run_config->domain_n + 2) + j;
+            double wij  = src[idx];
+            double wipj = src[(i + 1) * (run_config->domain_n + 2) + j];
+            double wimj = src[(i - 1) * (run_config->domain_n + 2) + j];
+            double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
+            double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
+            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
+            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
+        }
+    }
+#else
     for (my_int i = start_i; i <= stop_i; ++i) {
         for (my_int j = start_j; j <= stop_j; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
@@ -199,6 +280,7 @@ void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, 
             dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
         }
     }
+#endif
     // Угловые точки заполняем строго в конце
     if (run_config->start_i == 0) {
         // (1, 1)
@@ -267,6 +349,28 @@ void calc_tau_part(const struct RunConfig *run_config, const double * restrict a
             num += rhox * rhoy * a_residual[idx] * residual[idx];
             div += rhox * rhoy * a_residual[idx] * a_residual[idx];
         }
+        
+#if defined(__e2k__)
+        type_union_128 tmp_num = { 0, 0 };
+        type_union_128 tmp_div = { 0, 0 };
+        my_int tail = (run_config->domain_n - 2) % 2;
+        my_int stop_j = run_config->domain_n - 1 - tail;
+        for (my_int j = 2; j < stop_j; j += 2) {
+            my_int idx = i * (run_config->domain_n + 2) + j;
+            __v2di a_r = *((__v2di *) &a_residual[idx]);
+            __v2di r = *((__v2di *) &residual[idx]);
+            tmp_num.__v2di = __builtin_e2k_qpfaddd(tmp_num.__v2di, __builtin_e2k_qpfmuld(a_r, r));
+            tmp_div.__v2di = __builtin_e2k_qpfaddd(tmp_div.__v2di, __builtin_e2k_qpfmuld(a_r, a_r));
+        }
+        num += (tmp_num.d.d0 + tmp_num.d.d1) * rhox;
+        div += (tmp_div.d.d0 + tmp_div.d.d1) * rhox;
+        
+        if (tail) {
+            my_int idx = i * (run_config->domain_n + 2) + stop_j + tail;
+            num += a_residual[idx] * residual[idx] * rhox;
+            div += a_residual[idx] * a_residual[idx] * rhox;
+        }
+#else
         double tmp_num = 0.0;
         double tmp_div = 0.0;
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
@@ -276,6 +380,7 @@ void calc_tau_part(const struct RunConfig *run_config, const double * restrict a
         }
         num += tmp_num * rhox;
         div += tmp_div * rhox;
+#endif
     }
     *num_out = num;
     *div_out = div;
@@ -286,6 +391,9 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
     double * restrict cur_w = run_config->cur_w;
     double * restrict next_w = run_config->next_w;
     double * restrict residual = run_config->residual;
+    
+#if defined(__e2k__)
+#endif
     
     double error_value = 0;
     for (my_int i = 1; i <= run_config->domain_m; ++i) {
@@ -313,6 +421,28 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
             next_w[idx] = cur_w[idx] - diff;
             error_value += rhox * rhoy * diff * diff;
         }
+#if defined(__e2k__)
+        type_union_128 v2tau;
+        v2tau.d.d0 = tau;
+        v2tau.d.d1 = tau;
+        type_union_128 tmp_error_value = { 0, 0 };
+        my_int tail = (run_config->domain_n - 2) % 2;
+        my_int stop_j = run_config->domain_n - 1 - tail;
+        for (my_int j = 2; j < stop_j; j += 2) {
+            my_int idx = i * (run_config->domain_n + 2) + j;
+            __v2di diff = __builtin_e2k_qpfmuld(v2tau.__v2di, *((__v2di *) &residual[idx]));
+            *((__v2di *) &next_w[idx]) = __builtin_e2k_qpfsubd(*((__v2di *) &cur_w[idx]), diff);
+            tmp_error_value.__v2di = __builtin_e2k_qpfaddd(tmp_error_value.__v2di, __builtin_e2k_qpfmuld(diff, diff));
+        }
+        error_value += (tmp_error_value.d.d0 + tmp_error_value.d.d1) * rhox;
+        
+        if (tail) {
+            my_int idx = i * (run_config->domain_n + 2) + stop_j + tail;
+            double diff = tau * residual[idx];
+            next_w[idx] = cur_w[idx] - diff;
+            error_value += diff * diff * rhox;
+        }
+#else
         double tmp_error_value = 0.0;
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
@@ -321,6 +451,7 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
             tmp_error_value += diff * diff;
         }
         error_value += tmp_error_value * rhox;
+#endif
     }
     return error_value;
 }
