@@ -267,11 +267,15 @@ void calc_tau_part(const struct RunConfig *run_config, const double * restrict a
             num += rhox * rhoy * a_residual[idx] * residual[idx];
             div += rhox * rhoy * a_residual[idx] * a_residual[idx];
         }
+        double tmp_num = 0.0;
+        double tmp_div = 0.0;
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
-            num += rhox * a_residual[idx] * residual[idx];
-            div += rhox * a_residual[idx] * a_residual[idx];
+            tmp_num += a_residual[idx] * residual[idx];
+            tmp_div += a_residual[idx] * a_residual[idx];
         }
+        num += tmp_num * rhox;
+        div += tmp_div * rhox;
     }
     *num_out = num;
     *div_out = div;
@@ -309,12 +313,14 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
             next_w[idx] = cur_w[idx] - diff;
             error_value += rhox * rhoy * diff * diff;
         }
+        double tmp_error_value = 0.0;
         for (my_int j = 2; j <= run_config->domain_n - 1; ++j) {
             my_int idx = i * (run_config->domain_n + 2) + j;
             double diff = tau * residual[idx];
             next_w[idx] = cur_w[idx] - diff;
-            error_value += rhox * diff * diff;
+            tmp_error_value += diff * diff;
         }
+        error_value += tmp_error_value * rhox;
     }
     return error_value;
 }
