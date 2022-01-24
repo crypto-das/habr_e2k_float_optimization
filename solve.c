@@ -91,8 +91,9 @@ int solve(struct RunConfig *run_config)
         calc_aw_b(run_config, run_config->residual, a_residual, 0);
         
         // Находим частичные суммы скалярного произведения и нормы
-        num = calc_num_part(run_config, a_residual);
-        div = calc_div_part(run_config, a_residual);
+        num = 0;
+        div = 0;
+        calc_tau_part(run_config, a_residual, &num, &div);
         
         // Синхронизация num, div
         sb[0] = num;
@@ -104,15 +105,12 @@ int solve(struct RunConfig *run_config)
         // Находим итерационный параметр
         double tau = num / div;
         
-        // Находим новые значения сеточной функции
-        update_w(run_config, tau);
+        // Находим новые значения сеточной функции и частичную сумму ошибки
+        error_value = update_w_calc_partial_error(run_config, tau);
         
         // Синхронизация границ нового w
         error_code = sync_borders(run_config, run_config->next_w);
         CHECK_ERROR_CODE(error_code);
-        
-        // Вычисляем частичную сумму ошибки
-        error_value = calc_partial_error(run_config);
         
         // Cинхронизация значения ошибки
         sb[0] = error_value;
@@ -122,10 +120,14 @@ int solve(struct RunConfig *run_config)
         error_value = sqrt(error_value);
         
         // Записываем новое w в качестве текущего
-        memcpy(run_config->cur_w, run_config->next_w, (run_config->domain_m + 2) * (run_config->domain_n + 2) * sizeof(run_config->cur_w[0]));
+        {
+            double *t = run_config->cur_w;
+            run_config->cur_w = run_config->next_w;
+            run_config->next_w = t;
+        }
         
         ++iters_done;
-        if (iters_done % 100 == 0 || iters_done == 1) {
+        if (iters_done % 1000 == 0 || iters_done == 1) {
             double part_error = calc_current_error_part(run_config);
             double cur_error = sync_error_value(run_config, part_error);
             double end_time = MPI_Wtime();

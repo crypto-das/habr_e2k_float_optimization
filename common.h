@@ -40,6 +40,8 @@ struct RunConfig
     double *cur_w;
     double *residual;
     double *next_w;
+    double *b_mat;
+    double *q_mat;
     double *buf0;
     double *buf1;
 };
