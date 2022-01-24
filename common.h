@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdio.h>
+#include <unistd.h>
 
 #define CHECK_ERROR_CODE(error_code) \
     if (error_code) { \

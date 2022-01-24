@@ -3,7 +3,18 @@
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
+
+#ifdef __e2k__
+static uint64_t get_CPU_counter(void)
+{
+    uint64_t c64;
+#pragma asm_inline
+    asm("rrd %%clkr, %0" : "=r" (c64));
+    return c64;
+}
+#endif
 
 int sync_borders(const struct RunConfig *run_config, double *a)
 {
@@ -76,6 +87,9 @@ int solve(struct RunConfig *run_config)
     double sb[2];
     double rb[2];
     double start_time = MPI_Wtime();
+#ifdef __e2k__
+    uint64_t start_clock = get_CPU_counter();
+#endif
     do {
         // Ссылка для удобства обращения при промежуточных вычислениях
         double *a_residual = run_config->next_w;
@@ -137,6 +151,12 @@ int solve(struct RunConfig *run_config)
             MPI_Reduce(&proc_time, &elapsed_time, 1, MPI_DOUBLE, MPI_MAX, 0, run_config->mpi_config->comm);
             if (run_config->mpi_config->proc_id == 0) {
                 printf("iters_done == %d, iter_error == %.8lf, current error == %.8lf, chunk time == %.2lfs\n", iters_done, error_value, cur_error, elapsed_time);
+#ifdef __e2k__
+                uint64_t stop_clock = get_CPU_counter();
+                double diff = stop_clock - start_clock;
+                start_clock = stop_clock;
+                printf("    cycles per elem == %.2lf\n", diff / 1000 / run_config->domain_m / run_config->domain_n);
+#endif
             }
         }
     } while (error_value >= run_config->eps && iters_done);

@@ -139,64 +139,14 @@ void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, 
     double * restrict q_mat = run_config->q_mat;
     
     my_int start_i = 1;
-    my_int start_j = 1;
     my_int stop_i = run_config->domain_m;
     my_int stop_j = run_config->domain_n;
-    if (run_config->start_i == 0) {
-        ++start_i;
-        // (1, j)
-        for (my_int j = 1; j <= run_config->domain_n; ++j) {
-            my_int idx = 1 * (run_config->domain_n + 2) + j;
-            double w0j  = src[idx];
-            double w1j  = src[2 * (run_config->domain_n + 2) + j];
-            double w0jp = src[1 * (run_config->domain_n + 2) + j + 1];
-            double w0jm = src[1 * (run_config->domain_n + 2) + j - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (w0j - w1j) + (q_mat[idx] + 2 * run_config->inv_h1) * w0j - (w0jp + w0jm - 2 * w0j) * run_config->sqinv_h2 - alpha * b_mat[idx];
-        }
-    }
-    if (run_config->stop_i == run_config->m - 1) {
-        --stop_i;
-        // (M, j)
-        for (my_int j = 1; j <= run_config->domain_n; ++j) {
-            my_int idx = run_config->domain_m * (run_config->domain_n + 2) + j;
-            double wmj  = src[idx];
-            double wmmj = src[(run_config->domain_m - 1) * (run_config->domain_n + 2) + j];
-            double wmjp = src[run_config->domain_m       * (run_config->domain_n + 2) + j + 1];
-            double wmjm = src[run_config->domain_m       * (run_config->domain_n + 2) + j - 1];
-            dst[idx] = 2 * run_config->sqinv_h1 * (wmj - wmmj) + (q_mat[idx] + 2 * run_config->inv_h1) * wmj - (wmjp + wmjm - 2 * wmj) * run_config->sqinv_h2 - alpha * b_mat[idx];
-        }
-    }
-    if (run_config->start_j == 0) {
-        ++start_j;
-        // (i, 1)
-        for (my_int i = 1; i <= run_config->domain_m; ++i) {
-            my_int idx = i * (run_config->domain_n + 2) + 1;
-            double wi0  = src[idx];
-            double wi1  = src[i       * (run_config->domain_n + 2) + 2];
-            double wip0 = src[(i + 1) * (run_config->domain_n + 2) + 1];
-            double wim0 = src[(i - 1) * (run_config->domain_n + 2) + 1];
-            dst[idx] = 2 * run_config->sqinv_h2 * (wi0 - wi1) + (q_mat[idx] + 2 * run_config->inv_h2) * wi0 - (wip0 + wim0 - 2 * wi0) * run_config->sqinv_h1 - alpha * b_mat[idx];
-        }
-    }
-    if (run_config->stop_j == run_config->n - 1) {
-        --stop_j;
-        // (i, N)
-        for (my_int i = 1; i <= run_config->domain_m; ++i) {
-            my_int idx = i * (run_config->domain_n + 2) + run_config->domain_n;
-            double win  = src[idx];
-            double winm = src[i       * (run_config->domain_n + 2) + run_config->domain_n - 1];
-            double wipn = src[(i + 1) * (run_config->domain_n + 2) + run_config->domain_n];
-            double wimn = src[(i - 1) * (run_config->domain_n + 2) + run_config->domain_n];
-            dst[idx] = 2 * run_config->sqinv_h2 * (win - winm) + (q_mat[idx] + 2 * run_config->inv_h2) * win - (wipn + wimn - 2 * win) * run_config->sqinv_h1 - alpha * b_mat[idx];
-        }
-    }
+    
+    my_int start_idx = run_config->domain_n + 2 + run_config->domain_n % 2;
+    my_int stop_idx = stop_i * (run_config->domain_n + 2) + stop_j;
+    
     // (i, j)
 #if defined(__e2k__)
-    my_int head = start_j % 2;
-    start_j += head;
-    my_int tail = (stop_j - start_j + 1) % 2;
-    stop_j -= tail;
-    
     type_union_128 sqinv_h1;
     sqinv_h1.d.d0 = run_config->sqinv_h1;
     sqinv_h1.d.d1 = run_config->sqinv_h1;
@@ -213,74 +163,90 @@ void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, 
     v2alpha.d.d0 = alpha;
     v2alpha.d.d1 = alpha;
     
-    for (my_int i = start_i; i <= stop_i; ++i) {
-        if (head) {
-            my_int j = 1;
-            my_int idx = i * (run_config->domain_n + 2) + j;
-            double wij  = src[idx];
-            double wipj = src[(i + 1) * (run_config->domain_n + 2) + j];
-            double wimj = src[(i - 1) * (run_config->domain_n + 2) + j];
-            double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
-            double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
-            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
-            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
-        }
+    const __v2di mix_doubles = { 0x0f0e0d0c0b0a0908, 0x1716151413121110 };
+    __v2di src_0 = *((__v2di *) &src[start_i * (run_config->domain_n + 2) - 2]);
+    __v2di src_1 = *((__v2di *) &src[start_i * (run_config->domain_n + 2)]);
+    __v2di wijm = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+    
+#pragma unroll(3)
+    for (my_int idx = start_idx; idx <= stop_idx; idx += 2) {
+        __v2di wij = *((__v2di *) &src[idx]);
+        __v2di wipj = *((__v2di *) &src[idx + (run_config->domain_n + 2)]);
+        __v2di wimj = *((__v2di *) &src[idx - (run_config->domain_n + 2)]);
         
-        const __v2di mix_doubles = { 0x0f0e0d0c0b0a0908, 0x1716151413121110 };
-        __v2di src_0 = *((__v2di *) &src[i * (run_config->domain_n + 2) + start_j - 2]);
-        __v2di src_1 = *((__v2di *) &src[i * (run_config->domain_n + 2) + start_j]);
-        __v2di wijm = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+        src_0 = wij;
+        src_1 = *((__v2di *) &src[idx + 2]);
+        __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
         
-        for (my_int j = start_j; j < stop_j; j += 2) {
-            my_int idx = i * (run_config->domain_n + 2) + j;
-            __v2di wij = *((__v2di *) &src[idx]);
-            __v2di wipj = *((__v2di *) &src[(i + 1) * (run_config->domain_n + 2) + j]);
-            __v2di wimj = *((__v2di *) &src[(i - 1) * (run_config->domain_n + 2) + j]);
-            
-            src_0 = wij;
-            src_1 = *((__v2di *) &src[idx + 2]);
-            __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
-            
-            __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
-            __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
-            __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
-            __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
-            __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
-            __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
-            __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
-            __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
-            __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
-            __v2di t8 = __builtin_e2k_qpfmuld(v2alpha.__v2di, *((__v2di *) &b_mat[idx]));
-            *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(__builtin_e2k_qpfsubd(t7, laplacian), t8);
-            wijm = wijp;
-        }
-        
-        if (tail) {
-            my_int j = stop_j + 1;
-            my_int idx = i * (run_config->domain_n + 2) + j;
-            double wij  = src[idx];
-            double wipj = src[(i + 1) * (run_config->domain_n + 2) + j];
-            double wimj = src[(i - 1) * (run_config->domain_n + 2) + j];
-            double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
-            double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
-            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
-            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
-        }
+        __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
+        __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
+        __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
+        __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
+        __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
+        __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
+        __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
+        __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
+        __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
+        __v2di t8 = __builtin_e2k_qpfmuld(v2alpha.__v2di, *((__v2di *) &b_mat[idx]));
+        *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(__builtin_e2k_qpfsubd(t7, laplacian), t8);
+        wijm = wijp;
     }
 #else
-    for (my_int i = start_i; i <= stop_i; ++i) {
-        for (my_int j = start_j; j <= stop_j; ++j) {
-            my_int idx = i * (run_config->domain_n + 2) + j;
-            double wij  = src[idx];
-            double wipj = src[(i + 1) * (run_config->domain_n + 2) + j];
-            double wimj = src[(i - 1) * (run_config->domain_n + 2) + j];
-            double wijp = src[i       * (run_config->domain_n + 2) + j + 1];
-            double wijm = src[i       * (run_config->domain_n + 2) + j - 1];
-            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
-            dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
-        }
+    for (my_int idx = start_idx; idx <= stop_idx; ++idx) {
+        double wij  = src[idx];
+        double wipj = src[idx + (run_config->domain_n + 2)];
+        double wimj = src[idx - (run_config->domain_n + 2)];
+        double wijp = src[idx + 1];
+        double wijm = src[idx - 1];
+        double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
+        dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
     }
 #endif
+    
+    if (run_config->start_i == 0) {
+        // (1, j)
+        for (my_int j = 1; j <= run_config->domain_n; ++j) {
+            my_int idx = 1 * (run_config->domain_n + 2) + j;
+            double w0j  = src[idx];
+            double w1j  = src[2 * (run_config->domain_n + 2) + j];
+            double w0jp = src[1 * (run_config->domain_n + 2) + j + 1];
+            double w0jm = src[1 * (run_config->domain_n + 2) + j - 1];
+            dst[idx] = 2 * run_config->sqinv_h1 * (w0j - w1j) + (q_mat[idx] + 2 * run_config->inv_h1) * w0j - (w0jp + w0jm - 2 * w0j) * run_config->sqinv_h2 - alpha * b_mat[idx];
+        }
+    }
+    if (run_config->stop_i == run_config->m - 1) {
+        // (M, j)
+        for (my_int j = 1; j <= run_config->domain_n; ++j) {
+            my_int idx = run_config->domain_m * (run_config->domain_n + 2) + j;
+            double wmj  = src[idx];
+            double wmmj = src[(run_config->domain_m - 1) * (run_config->domain_n + 2) + j];
+            double wmjp = src[run_config->domain_m       * (run_config->domain_n + 2) + j + 1];
+            double wmjm = src[run_config->domain_m       * (run_config->domain_n + 2) + j - 1];
+            dst[idx] = 2 * run_config->sqinv_h1 * (wmj - wmmj) + (q_mat[idx] + 2 * run_config->inv_h1) * wmj - (wmjp + wmjm - 2 * wmj) * run_config->sqinv_h2 - alpha * b_mat[idx];
+        }
+    }
+    if (run_config->start_j == 0) {
+        // (i, 1)
+        for (my_int i = 1; i <= run_config->domain_m; ++i) {
+            my_int idx = i * (run_config->domain_n + 2) + 1;
+            double wi0  = src[idx];
+            double wi1  = src[i       * (run_config->domain_n + 2) + 2];
+            double wip0 = src[(i + 1) * (run_config->domain_n + 2) + 1];
+            double wim0 = src[(i - 1) * (run_config->domain_n + 2) + 1];
+            dst[idx] = 2 * run_config->sqinv_h2 * (wi0 - wi1) + (q_mat[idx] + 2 * run_config->inv_h2) * wi0 - (wip0 + wim0 - 2 * wi0) * run_config->sqinv_h1 - alpha * b_mat[idx];
+        }
+    }
+    if (run_config->stop_j == run_config->n - 1) {
+        // (i, N)
+        for (my_int i = 1; i <= run_config->domain_m; ++i) {
+            my_int idx = i * (run_config->domain_n + 2) + run_config->domain_n;
+            double win  = src[idx];
+            double winm = src[i       * (run_config->domain_n + 2) + run_config->domain_n - 1];
+            double wipn = src[(i + 1) * (run_config->domain_n + 2) + run_config->domain_n];
+            double wimn = src[(i - 1) * (run_config->domain_n + 2) + run_config->domain_n];
+            dst[idx] = 2 * run_config->sqinv_h2 * (win - winm) + (q_mat[idx] + 2 * run_config->inv_h2) * win - (wipn + wimn - 2 * win) * run_config->sqinv_h1 - alpha * b_mat[idx];
+        }
+    }
     // Угловые точки заполняем строго в конце
     if (run_config->start_i == 0) {
         // (1, 1)
@@ -326,6 +292,7 @@ void calc_tau_part(const struct RunConfig *run_config, const double * restrict a
     
     double num = 0;
     double div = 0;
+    
     for (my_int i = 1; i <= run_config->domain_m; ++i) {
         double rhox = 1;
         if ((i == 1 && run_config->start_i == 0) || (i == run_config->domain_m && run_config->stop_i == run_config->m - 1)) {
@@ -391,9 +358,6 @@ double update_w_calc_partial_error(const struct RunConfig *run_config, double ta
     double * restrict cur_w = run_config->cur_w;
     double * restrict next_w = run_config->next_w;
     double * restrict residual = run_config->residual;
-    
-#if defined(__e2k__)
-#endif
     
     double error_value = 0;
     for (my_int i = 1; i <= run_config->domain_m; ++i) {
