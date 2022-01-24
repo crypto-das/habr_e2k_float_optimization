@@ -159,47 +159,80 @@ void calc_aw_b(const struct RunConfig *run_config, const double * restrict src, 
     const_2.d.d0 = 2.0;
     const_2.d.d1 = 2.0;
     
-    type_union_128 v2alpha;
-    v2alpha.d.d0 = alpha;
-    v2alpha.d.d1 = alpha;
-    
     const __v2di mix_doubles = { 0x0f0e0d0c0b0a0908, 0x1716151413121110 };
     __v2di src_0 = *((__v2di *) &src[start_i * (run_config->domain_n + 2) - 2]);
     __v2di src_1 = *((__v2di *) &src[start_i * (run_config->domain_n + 2)]);
     __v2di wijm = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
     
+    if (alpha != 0.0) {
 #pragma unroll(3)
-    for (my_int idx = start_idx; idx <= stop_idx; idx += 2) {
-        __v2di wij = *((__v2di *) &src[idx]);
-        __v2di wipj = *((__v2di *) &src[idx + (run_config->domain_n + 2)]);
-        __v2di wimj = *((__v2di *) &src[idx - (run_config->domain_n + 2)]);
-        
-        src_0 = wij;
-        src_1 = *((__v2di *) &src[idx + 2]);
-        __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
-        
-        __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
-        __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
-        __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
-        __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
-        __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
-        __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
-        __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
-        __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
-        __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
-        __v2di t8 = __builtin_e2k_qpfmuld(v2alpha.__v2di, *((__v2di *) &b_mat[idx]));
-        *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(__builtin_e2k_qpfsubd(t7, laplacian), t8);
-        wijm = wijp;
+        for (my_int idx = start_idx; idx <= stop_idx; idx += 2) {
+            __v2di wij = *((__v2di *) &src[idx]);
+            __v2di wipj = *((__v2di *) &src[idx + (run_config->domain_n + 2)]);
+            __v2di wimj = *((__v2di *) &src[idx - (run_config->domain_n + 2)]);
+            
+            src_0 = wij;
+            src_1 = *((__v2di *) &src[idx + 2]);
+            __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+            
+            __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
+            __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
+            __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
+            __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
+            __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
+            __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
+            __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
+            __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
+            __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
+            __v2di t8 = *((__v2di *) &b_mat[idx]);
+            *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(__builtin_e2k_qpfsubd(t7, laplacian), t8);
+            wijm = wijp;
+        }
+    } else {
+#pragma unroll(3)
+        for (my_int idx = start_idx; idx <= stop_idx; idx += 2) {
+            __v2di wij = *((__v2di *) &src[idx]);
+            __v2di wipj = *((__v2di *) &src[idx + (run_config->domain_n + 2)]);
+            __v2di wimj = *((__v2di *) &src[idx - (run_config->domain_n + 2)]);
+            
+            src_0 = wij;
+            src_1 = *((__v2di *) &src[idx + 2]);
+            __v2di wijp = __builtin_e2k_qppermb(src_1, src_0, mix_doubles);
+            
+            __v2di t0 = __builtin_e2k_qpfaddd(wipj, wimj);
+            __v2di t1 = __builtin_e2k_qpfmuld(const_2.__v2di, wij);
+            __v2di t2 = __builtin_e2k_qpfaddd(wijp, wijm);
+            __v2di t3 = __builtin_e2k_qpfsubd(t0, t1);
+            __v2di t4 = __builtin_e2k_qpfsubd(t2, t1);
+            __v2di t5 = __builtin_e2k_qpfmuld(t3, sqinv_h1.__v2di);
+            __v2di t6 = __builtin_e2k_qpfmuld(t4, sqinv_h2.__v2di);
+            __v2di laplacian = __builtin_e2k_qpfaddd(t5, t6);
+            __v2di t7 = __builtin_e2k_qpfmuld(wij, *((__v2di *) &q_mat[idx]));
+            *((__v2di *) &dst[idx]) = __builtin_e2k_qpfsubd(t7, laplacian);
+            wijm = wijp;
+        }
     }
 #else
-    for (my_int idx = start_idx; idx <= stop_idx; ++idx) {
-        double wij  = src[idx];
-        double wipj = src[idx + (run_config->domain_n + 2)];
-        double wimj = src[idx - (run_config->domain_n + 2)];
-        double wijp = src[idx + 1];
-        double wijm = src[idx - 1];
-        double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
-        dst[idx] = q_mat[idx] * wij - laplacian - alpha * b_mat[idx];
+    if (alpha != 0.0) {
+        for (my_int idx = run_config->domain_n + 2; idx <= stop_i * (run_config->domain_n + 2) + stop_j; ++idx) {
+            double wij  = src[idx];
+            double wipj = src[idx + (run_config->domain_n + 2)];
+            double wimj = src[idx - (run_config->domain_n + 2)];
+            double wijp = src[idx + 1];
+            double wijm = src[idx - 1];
+            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
+            dst[idx] = q_mat[idx] * wij - laplacian - b_mat[idx];
+        }
+    } else {
+        for (my_int idx = run_config->domain_n + 2; idx <= stop_i * (run_config->domain_n + 2) + stop_j; ++idx) {
+            double wij  = src[idx];
+            double wipj = src[idx + (run_config->domain_n + 2)];
+            double wimj = src[idx - (run_config->domain_n + 2)];
+            double wijp = src[idx + 1];
+            double wijm = src[idx - 1];
+            double laplacian = (wipj + wimj - 2 * wij) * run_config->sqinv_h1 + (wijp + wijm - 2 * wij) * run_config->sqinv_h2;
+            dst[idx] = q_mat[idx] * wij - laplacian;
+        }
     }
 #endif
     
